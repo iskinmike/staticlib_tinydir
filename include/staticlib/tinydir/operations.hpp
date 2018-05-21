@@ -40,7 +40,7 @@ namespace tinydir {
  * @return list of enries
  */
 std::vector<path> list_directory(const std::string& dirpath);
-
+std::vector<path> list_directory_regexp(const std::string& dirpath, const std::string &regexp);
 /**
  * Creates new FS directory with the specified path
  * 

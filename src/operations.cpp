@@ -36,6 +36,7 @@
 #else // !STATICLIB_WINDOWS
 #include <cerrno>
 #include <sys/stat.h>
+#include <regex>
 #endif // STATICLIB_WINDOWS
 
 #include "tinydir.h"
@@ -73,6 +74,53 @@ std::vector<path> list_directory(const std::string& dirpath) {
         if (!err_read) { // skip files that we cannot read
             auto tf = path(nullptr, std::addressof(file));
             if ("." != tf.filename() && ".." != tf.filename()) {
+                res.emplace_back(std::move(tf));
+            }
+        }
+        auto err_next = tinydir_next(std::addressof(dir));
+        if (err_next) throw tinydir_exception(TRACEMSG("Error iterating directory, path: [" + dirpath + "]"));
+    }
+    std::sort(res.begin(), res.end(), [](const path& a, const path& b) {
+        if (a.is_directory() && !b.is_directory()) {
+            return true;
+        } else if (!a.is_directory() && b.is_directory()) {
+            return false;
+        }
+        return a.filename() < b.filename();
+    });
+    return res;
+}
+
+std::vector<path> list_directory_regexp(const std::string& dirpath, const std::string& regexp) {
+    tinydir_dir dir;
+    std::string errstr;
+#ifdef STATICLIB_WINDOWS
+    auto err_open = tinydir_open(std::addressof(dir), sl::utils::widen(dirpath).c_str());
+    if (err_open) {
+        errstr = sl::utils::errcode_to_string(::GetLastError());
+    }
+#else
+    auto err_open = tinydir_open(std::addressof(dir), dirpath.c_str());
+    if (err_open) {
+        errstr = ::strerror(errno);
+    }
+#endif
+    if (err_open) throw tinydir_exception(TRACEMSG("Error opening directory," +
+            " path: [" + dirpath + "], error: [" + errstr + "]"));
+    auto deferred = sl::support::defer([&dir]() STATICLIB_NOEXCEPT {
+        tinydir_close(std::addressof(dir));
+    });
+    std::vector<path> res;
+    std::smatch match;
+    std::regex reg(regexp.c_str());
+
+    while (dir.has_next) {
+        tinydir_file file;
+        auto err_read = tinydir_readfile(std::addressof(dir), std::addressof(file));
+        if (!err_read) { // skip files that we cannot read
+            auto tf = path(nullptr, std::addressof(file));
+//            if ("." != tf.filename() && ".." != tf.filename()) {
+            if (std::regex_search(tf.filename(), match, reg)) {
                 res.emplace_back(std::move(tf));
             }
         }
